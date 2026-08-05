@@ -27,7 +27,11 @@ SESSION_PATH = BASE_DIR / "tistory_session.json"
 LOGIN_WAIT_TIMEOUT_MS = 5 * 60 * 1000  # 카카오 로그인(2단계 인증 포함) 대기, 최대 5분
 MANUAL_PUBLISH_WAIT_SEC = 10 * 60  # 자동 발행 실패 시 사용자가 직접 완료할 때까지 대기, 최대 10분
 
-PUBLISH_BUTTON_PATTERN = re.compile("공개\\s*발행|저장")
+
+# 최종 버튼 문구는 공개범위에 따라 "공개 발행" / "공개(보호) 발행" / "비공개 저장"으로
+# 달라진다. "공개(보호)"처럼 괄호 안에 다른 글자가 끼는 경우가 있어 "공개" 바로 뒤에
+# 공백만 오는 패턴으로는 놓친다 -> "발행" 또는 "저장"으로 끝나는지만 넉넉하게 확인한다.
+PUBLISH_BUTTON_PATTERN = re.compile("발행|저장")
 
 
 def _editor_url(blog_name: str) -> str:
@@ -88,6 +92,9 @@ def post_to_tistory(
     visibility_label: str,
     on_status=None,
     should_cancel=None,
+    thumbnail_path: str = "",
+    category: str = "",
+    body_image_paths: list = None,
 ) -> dict:
     status = on_status or (lambda msg: None)
     cancel = should_cancel or (lambda: False)
@@ -114,12 +121,23 @@ def post_to_tistory(
         _fill_title(page, title)
         _fill_body(page, html_content)
         _fill_tags(page, tags)
+        if category:
+            _set_category(page, category)
+        if body_image_paths:
+            status(f"본문에 이미지 {len(body_image_paths)}개를 삽입하는 중...")
+            _insert_body_images(page, body_image_paths)
 
         status("입력을 완료했습니다. 자동 게시를 시도합니다...")
         try:
-            result_url = _attempt_auto_publish(page, visibility_label)
+            _attempt_auto_publish(page, visibility_label, thumbnail_path)
+            status("게시 여부를 실제 글 목록에서 확인하는 중...")
+            real_url = _find_published_url(page, blog_name, title)
+            if not real_url:
+                raise RuntimeError(
+                    "발행 버튼 클릭까지는 진행됐지만, 글 목록에서 실제 게시물을 확인하지 못했습니다."
+                )
             browser.close()
-            return {"url": result_url, "auto_published": True}
+            return {"url": real_url, "auto_published": True}
         except Exception:
             pass
 
@@ -174,10 +192,63 @@ def _fill_tags(page, tags: list):
         tag_input.press("Enter")
 
 
-def _attempt_auto_publish(page, visibility_label: str) -> str:
+def _set_category(page, category_name: str):
+    """상단 '카테고리' 버튼(id=category-btn)을 눌러 목록(id=category-list)에서
+    이름이 일치하는 항목을 고른다. 카테고리가 없거나 이름이 안 맞으면 조용히 넘어간다."""
+    try:
+        page.locator("#category-btn").click(timeout=5_000)
+        option = page.locator("#category-list [role='option']", has_text=category_name)
+        option.first.wait_for(state="visible", timeout=3_000)
+        option.first.click()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _insert_body_images(page, image_paths: list):
+    """본문 툴바의 '이미지 ▾ -> 사진' 메뉴로 실제 티스토리 CDN에 이미지를 업로드해서
+    본문 커서 위치에 순서대로 삽입한다 (대표이미지와는 별개의, 본문 안에 보이는 이미지).
+    커서를 본문 맨 끝으로 옮겨두고 하나씩 순서대로 넣는다. 실패한 이미지는 건너뛴다."""
+    try:
+        frame = page.frame(name="editor-tistory_ifr")
+        body = frame.locator("body#tinymce")
+        body.click()
+        page.keyboard.press("Control+End")
+    except Exception:  # noqa: BLE001
+        pass
+
+    for path in image_paths:
+        try:
+            img_btn = page.locator("button:has(i.mce-i-image)").locator("visible=true").first
+            img_btn.click(timeout=5_000)
+            photo_option = page.get_by_text("사진", exact=True).locator("visible=true").first
+            photo_option.click(timeout=3_000)
+            file_input = page.locator("#openFile")
+            file_input.wait_for(state="attached", timeout=5_000)
+            file_input.set_input_files(path)
+            page.wait_for_timeout(2_500)
+        except Exception:  # noqa: BLE001
+            continue
+
+
+def _set_thumbnail(page, thumbnail_path: str):
+    """'완료' 클릭 후 뜨는 발행 모달의 대표이미지 파일 입력에 직접 파일을 넣는다.
+    실패해도(파일 없음, 요소 못 찾음 등) 전체 게시를 막지 않고 조용히 넘어간다."""
+    try:
+        file_input = page.locator("input[type='file'][accept='image/*']").first
+        file_input.wait_for(state="attached", timeout=5_000)
+        file_input.set_input_files(thumbnail_path)
+        page.wait_for_timeout(1_000)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _attempt_auto_publish(page, visibility_label: str, thumbnail_path: str = "") -> str:
     complete_btn = page.get_by_role("button", name="완료")
     complete_btn.wait_for(state="visible", timeout=10_000)
     complete_btn.click()
+
+    if thumbnail_path:
+        _set_thumbnail(page, thumbnail_path)
 
     # 공개범위 라디오 라벨은 "비공개" 안에 "공개"가 부분 문자열로 들어있어
     # exact=False(부분일치)로 찾으면 여러 라디오가 동시에 매치된다. exact=True로 정확히 매치.
@@ -194,6 +265,31 @@ def _attempt_auto_publish(page, visibility_label: str) -> str:
 
     page.wait_for_load_state("networkidle", timeout=20_000)
     return page.url
+
+
+def _find_published_url(page, blog_name: str, title: str, timeout_sec: float = 15.0):
+    """발행 버튼을 눌렀다고 해서 실제로 저장됐다는 보장이 없어서(관찰됨: 클릭은 성공했지만
+    글 목록엔 아무것도 안 생긴 경우), 반드시 '글 관리' 목록에서 방금 쓴 제목이 실제로
+    보이는지 확인한다. 또한 발행 직후 page.url은 새 글쓰기 화면으로 리셋되는 경우가 많아
+    실제 게시글 주소가 아니므로, 목록의 제목 링크 자체의 href 속성에서 진짜 URL을 읽는다
+    (클릭해서 새 탭이 뜨길 기다리는 방식은 타이밍에 따라 실패할 수 있어 더 안정적인
+    이 방식으로 바꿨다). 못 찾으면 None."""
+    posts_url = f"https://{blog_name}.tistory.com/manage/posts/"
+    needle = title[:20]
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        try:
+            page.goto(posts_url)
+            page.wait_for_load_state("networkidle", timeout=10_000)
+            link = page.get_by_role("link", name=needle, exact=False).first
+            if link.is_visible(timeout=2_000):
+                href = link.get_attribute("href")
+                if href:
+                    return href
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(2)
+    return None
 
 
 def _wait_for_manual_publish(page, should_cancel):
