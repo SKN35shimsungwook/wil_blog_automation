@@ -164,9 +164,10 @@ class SettingsDialog(tk.Toplevel):
         ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8))
 
         self.login_status_var = tk.StringVar(value="")
-        ttk.Button(
+        self.login_btn = ttk.Button(
             tistory_frame, text="티스토리 로그인 / 세션 갱신", command=self._start_login
-        ).grid(row=7, column=0, sticky="w", **pad)
+        )
+        self.login_btn.grid(row=7, column=0, sticky="w", **pad)
         ttk.Label(tistory_frame, textvariable=self.login_status_var, foreground="gray").grid(
             row=7, column=1, sticky="w", padx=10
         )
@@ -177,11 +178,15 @@ class SettingsDialog(tk.Toplevel):
         ttk.Button(btn_frame, text="취소", command=self.destroy).pack(side="right")
 
     def _start_login(self):
+        if getattr(self, "_logging_in", False):
+            return
         blog_name = self.blog_name_var.get().strip()
         if not blog_name:
             messagebox.showwarning("안내", "블로그 이름을 먼저 입력해주세요.")
             return
 
+        self._logging_in = True
+        self.login_btn.config(state="disabled")
         result_queue: "queue.Queue" = queue.Queue()
 
         def worker():
@@ -207,6 +212,10 @@ class SettingsDialog(tk.Toplevel):
             self.login_status_var.set(payload)
             self.after(150, lambda: self._poll_login(result_queue))
             return
+
+        self._logging_in = False
+        self.login_btn.config(state="normal")
+
         if kind == "error":
             self.login_status_var.set("로그인 실패")
             messagebox.showerror("실패", payload)
@@ -253,6 +262,7 @@ class WilApp(tk.Tk):
         self.result_queue: "queue.Queue" = queue.Queue()
         self.last_data = None
         self.busy = False
+        self.uploading = False
 
         self._build_menu()
         self._build_layout()
@@ -968,6 +978,8 @@ class WilApp(tk.Tk):
         self.set_status(f"HTML 저장 완료: {path}")
 
     def upload_to_tistory(self):
+        if self.uploading:
+            return
         if not self.last_data:
             messagebox.showwarning("안내", "먼저 회고를 생성해주세요.")
             return
@@ -981,9 +993,14 @@ class WilApp(tk.Tk):
         html_content = self._body_only_html()
         self._upload_week = self._current_week_number()
 
+        self.uploading = True
+        self.upload_btn.config(state="disabled")
+
         confirm = ConfirmUploadDialog(self, title=title, blog=blog_name)
         self.wait_window(confirm)
         if not confirm.confirmed:
+            self.uploading = False
+            self.upload_btn.config(state="normal")
             return
 
         progress = UploadProgressDialog(self)
@@ -1011,6 +1028,8 @@ class WilApp(tk.Tk):
 
     def _poll_upload(self, progress: "UploadProgressDialog"):
         if not progress.winfo_exists():
+            self.uploading = False
+            self.upload_btn.config(state="normal")
             return
         try:
             kind, payload = progress.result_queue.get_nowait()
@@ -1024,6 +1043,8 @@ class WilApp(tk.Tk):
             return
 
         progress.destroy()
+        self.uploading = False
+        self.upload_btn.config(state="normal")
 
         if kind == "error":
             self.set_status("티스토리 업로드 실패")
@@ -1051,6 +1072,8 @@ class UploadProgressDialog(tk.Toplevel):
         self.result_queue: "queue.Queue" = queue.Queue()
         self.cancelled = False
         self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.transient(parent)
+        self.grab_set()
 
         self.status_var = tk.StringVar(value="브라우저를 여는 중입니다...")
         ttk.Label(self, textvariable=self.status_var, wraplength=420, justify="left").pack(
@@ -1073,6 +1096,8 @@ class ConfirmUploadDialog(tk.Toplevel):
         self.geometry("420x220")
         self.resizable(False, False)
         self.confirmed = False
+        self.transient(parent)
+        self.grab_set()
 
         ttk.Label(self, text=f"'{blog}.tistory.com' 블로그에 아래 글을 게시할까요?", wraplength=380).pack(
             padx=14, pady=(16, 6), anchor="w"

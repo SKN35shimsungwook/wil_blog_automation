@@ -18,10 +18,22 @@ DEFAULT_CONFIG = {
 }
 
 
+def _backup_corrupted(path: Path) -> None:
+    backup = path.with_suffix(path.suffix + ".corrupted")
+    try:
+        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
         return dict(DEFAULT_CONFIG)
-    data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        _backup_corrupted(CONFIG_PATH)
+        return dict(DEFAULT_CONFIG)
     merged = dict(DEFAULT_CONFIG)
     merged.update(data)
     return merged
@@ -36,7 +48,11 @@ def save_config(config: dict) -> None:
 def load_history() -> list:
     if not HISTORY_PATH.exists():
         return []
-    return json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+    try:
+        return json.loads(HISTORY_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        _backup_corrupted(HISTORY_PATH)
+        return []
 
 
 def save_history(history: list) -> None:

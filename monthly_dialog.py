@@ -33,6 +33,8 @@ class MonthlyReviewDialog(tk.Toplevel):
         self.last_data = None
         self.week_entries: list = []
         self.title_value = ""
+        self.busy = False
+        self.uploading = False
 
         self._build_layout()
         self._load_default_month()
@@ -102,13 +104,12 @@ class MonthlyReviewDialog(tk.Toplevel):
 
         btn_row = ttk.Frame(left)
         btn_row.pack(fill="x", pady=8)
-        ttk.Button(btn_row, text="① 선택지 생성", command=self._generate_options).pack(side="left")
-        ttk.Button(btn_row, text="② 월간 회고 생성", command=self._generate_review).pack(
-            side="left", padx=6
-        )
-        ttk.Button(btn_row, text="③ 티스토리 업로드", command=self._upload).pack(
-            side="left", padx=6
-        )
+        self.options_btn = ttk.Button(btn_row, text="① 선택지 생성", command=self._generate_options)
+        self.options_btn.pack(side="left")
+        self.review_btn = ttk.Button(btn_row, text="② 월간 회고 생성", command=self._generate_review)
+        self.review_btn.pack(side="left", padx=6)
+        self.upload_btn = ttk.Button(btn_row, text="③ 티스토리 업로드", command=self._upload)
+        self.upload_btn.pack(side="left", padx=6)
 
         right = ttk.Frame(main)
         main.add(right, weight=1)
@@ -210,6 +211,8 @@ class MonthlyReviewDialog(tk.Toplevel):
 
     # ---------- 액션 ----------
     def _generate_options(self):
+        if self.busy:
+            return
         if not self.week_entries:
             messagebox.showwarning("안내", "먼저 '이 달 목록 불러오기'를 눌러주세요.")
             return
@@ -217,6 +220,9 @@ class MonthlyReviewDialog(tk.Toplevel):
             messagebox.showwarning("안내", "설정에서 Gemini API 키를 먼저 입력해주세요.")
             return
         summaries = self._week_summaries_text()
+        self.busy = True
+        self.options_btn.config(state="disabled")
+        self.review_btn.config(state="disabled")
         self.status_var.set("월간 성찰 선택지를 만드는 중...")
         result_queue: "queue.Queue" = queue.Queue()
 
@@ -236,6 +242,9 @@ class MonthlyReviewDialog(tk.Toplevel):
         self._poll_simple(result_queue, self._on_options_done)
 
     def _on_options_done(self, status, payload):
+        self.busy = False
+        self.options_btn.config(state="normal")
+        self.review_btn.config(state="normal")
         if status == "error":
             self.status_var.set("선택지 생성 실패")
             messagebox.showerror("실패", payload)
@@ -244,6 +253,8 @@ class MonthlyReviewDialog(tk.Toplevel):
         self.status_var.set("선택지 생성 완료")
 
     def _generate_review(self):
+        if self.busy:
+            return
         if not self.week_entries:
             messagebox.showwarning("안내", "먼저 '이 달 목록 불러오기'를 눌러주세요.")
             return
@@ -252,6 +263,9 @@ class MonthlyReviewDialog(tk.Toplevel):
             return
         summaries = self._week_summaries_text()
         reflection = self._reflection_block()
+        self.busy = True
+        self.options_btn.config(state="disabled")
+        self.review_btn.config(state="disabled")
         self.status_var.set("월간 종합 회고를 생성하는 중...")
         result_queue: "queue.Queue" = queue.Queue()
 
@@ -271,6 +285,9 @@ class MonthlyReviewDialog(tk.Toplevel):
         self._poll_simple(result_queue, self._on_review_done)
 
     def _on_review_done(self, status, payload):
+        self.busy = False
+        self.options_btn.config(state="normal")
+        self.review_btn.config(state="normal")
         if status == "error":
             self.status_var.set("생성 실패")
             messagebox.showerror("생성 실패", payload)
@@ -282,6 +299,8 @@ class MonthlyReviewDialog(tk.Toplevel):
         self.status_var.set("월간 회고 생성 완료")
 
     def _upload(self):
+        if self.uploading:
+            return
         if not self.last_data:
             messagebox.showwarning("안내", "먼저 월간 회고를 생성해주세요.")
             return
@@ -293,10 +312,14 @@ class MonthlyReviewDialog(tk.Toplevel):
         html_content = markdown_utils.markdown_to_html(self.last_data["markdown_body"])
         tags = self.last_data.get("tags", [])
 
+        self.uploading = True
+        self.upload_btn.config(state="disabled")
         if not messagebox.askyesno(
             "업로드 확인",
             f"'{blog_name}.tistory.com'에 아래 제목으로 게시할까요? (기본값: 비공개)\n\n{self.title_value}",
         ):
+            self.uploading = False
+            self.upload_btn.config(state="normal")
             return
 
         self.status_var.set("업로드 중...")
@@ -323,6 +346,8 @@ class MonthlyReviewDialog(tk.Toplevel):
         self._poll_upload(result_queue)
 
     def _on_upload_done(self, status, payload):
+        self.uploading = False
+        self.upload_btn.config(state="normal")
         if status == "error":
             self.status_var.set("업로드 실패")
             messagebox.showerror("실패", payload)

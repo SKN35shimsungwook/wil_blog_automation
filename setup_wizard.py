@@ -146,18 +146,23 @@ class SetupWizard(tk.Toplevel):
             foreground="gray", justify="left", wraplength=560,
         ).pack(anchor="w", pady=(0, 10))
 
-        ttk.Button(self.body, text="키 테스트", command=self._test_gemini_key).pack(anchor="w")
+        self.gemini_test_btn = ttk.Button(self.body, text="키 테스트", command=self._test_gemini_key)
+        self.gemini_test_btn.pack(anchor="w")
         self.gemini_test_status = tk.StringVar()
         ttk.Label(self.body, textvariable=self.gemini_test_status, foreground="gray").pack(
             anchor="w", pady=4
         )
 
     def _test_gemini_key(self):
+        if getattr(self, "_testing_gemini", False):
+            return
         key = self.gemini_key_var.get().strip()
         model = self.gemini_model_var.get().strip() or "gemini-flash-lite-latest"
         if not key:
             messagebox.showwarning("안내", "API 키를 먼저 입력해주세요.")
             return
+        self._testing_gemini = True
+        self.gemini_test_btn.config(state="disabled")
         self.gemini_test_status.set("테스트 중...")
         result_queue: "queue.Queue" = queue.Queue()
 
@@ -175,6 +180,8 @@ class SetupWizard(tk.Toplevel):
         self._poll(result_queue, self._on_gemini_test_done)
 
     def _on_gemini_test_done(self, status, payload):
+        self._testing_gemini = False
+        self.gemini_test_btn.config(state="normal")
         if status == "ok":
             self.gemini_test_status.set(f"✅ 정상 동작 확인 (응답: {payload})")
         else:
@@ -234,9 +241,10 @@ class SetupWizard(tk.Toplevel):
             self.body, text="예: myid.tistory.com 이면 'myid'만 입력", foreground="gray"
         ).pack(anchor="w", pady=(0, 10))
 
-        ttk.Button(self.body, text="지금 로그인하기", command=self._start_tistory_login).pack(
-            anchor="w"
+        self.tistory_login_btn = ttk.Button(
+            self.body, text="지금 로그인하기", command=self._start_tistory_login
         )
+        self.tistory_login_btn.pack(anchor="w")
         self.tistory_login_status = tk.StringVar()
         ttk.Label(self.body, textvariable=self.tistory_login_status, foreground="gray").pack(
             anchor="w", pady=4
@@ -248,10 +256,14 @@ class SetupWizard(tk.Toplevel):
         ).pack(anchor="w", pady=(6, 0))
 
     def _start_tistory_login(self):
+        if getattr(self, "_logging_in", False):
+            return
         blog_name = self.blog_name_var.get().strip()
         if not blog_name:
             messagebox.showwarning("안내", "블로그 이름을 먼저 입력해주세요.")
             return
+        self._logging_in = True
+        self.tistory_login_btn.config(state="disabled")
         self.tistory_login_status.set("브라우저 창에서 로그인해주세요...")
         result_queue: "queue.Queue" = queue.Queue()
 
@@ -277,6 +289,8 @@ class SetupWizard(tk.Toplevel):
             self.tistory_login_status.set(payload)
             self.after(150, lambda: self._poll_login(result_queue))
             return
+        self._logging_in = False
+        self.tistory_login_btn.config(state="normal")
         if kind == "error":
             self.tistory_login_status.set(f"❌ 실패: {payload}")
             return

@@ -40,10 +40,11 @@ def extract_code_context(file_paths: list) -> str:
     total = 0
     for p in file_paths:
         path = Path(p)
+        suffix = path.suffix.lower()
         try:
-            if path.suffix == ".ipynb":
+            if suffix == ".ipynb":
                 block = _read_ipynb(path)
-            elif path.suffix == ".py":
+            elif suffix == ".py":
                 block = _read_py(path)
             else:
                 continue
