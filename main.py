@@ -16,13 +16,15 @@ import curriculum
 import markdown_utils
 import storage
 import tistory_browser
+from monthly_dialog import MonthlyReviewDialog
+from setup_wizard import SetupWizard
 
 REFLECTION_QUESTIONS = [
-    "지난 일주일 동안 가장 인상 깊었던 배움은 무엇이었나요?",
-    "그 배움까지 다가가는데 어떤 어려움이 있었나요?",
-    "그 과정에서 나는 무엇을 깨달았고, 어떤 감정/생각이 들었나요?",
-    "결과적으로, 현재 나의 상태는 어떤가요?",
-    "이 상태에서 다음 한 주를 더 잘 보내려면 어떻게 해야 할까요?",
+    "이번 주 가장 기억에 남는 배움은? (구체적인 기능/명령어/개념 하나를 꼽는다면)",
+    "그 과정에서 구체적으로 어떤 에러나 막힘이 있었나요? (에러 메시지나 안 되던 상황을 최대한 구체적으로)",
+    "그 문제를 어떻게 해결했고, 해결하는 순간 어떤 생각/감정이 들었나요?",
+    "이번 주를 마친 지금, 나의 이해도와 상태는 어느 정도인가요?",
+    "다음 주에는 구체적으로 무엇을 더 연습/예습하고 싶나요?",
 ]
 
 
@@ -101,14 +103,14 @@ class SettingsDialog(tk.Toplevel):
             row=2, column=1, **pad
         )
         ttk.Label(
-            title_frame, text="YYYY-MM-DD. 이 날짜가 속한 주(월~일)를 1주차로 계산합니다.",
+            title_frame, text="YYYY-MM-DD. 이 날짜가 속한 주(월~일)를 1회차로 계산합니다.",
             foreground="gray",
         ).grid(row=3, column=1, sticky="w", padx=10)
 
         ttk.Label(
             title_frame,
-            text="제목은 항상 '[캠프명] {기수}기 {주차}주차 회고' 형식으로 자동 조립됩니다.\n"
-            "주차는 메인 화면에서 지정(자동 제안됨)합니다.",
+            text="제목은 항상 '[캠프명] {기수}기 {회차}회차 회고' 형식으로 자동 조립됩니다.\n"
+            "회차는 메인 화면에서 지정(자동 제안됨)합니다.",
             foreground="gray",
             justify="left",
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 6))
@@ -125,6 +127,29 @@ class SettingsDialog(tk.Toplevel):
             tistory_frame, text="예: myid.tistory.com 이면 'myid'만 입력", foreground="gray"
         ).grid(row=1, column=1, sticky="w", padx=10)
 
+        ttk.Label(tistory_frame, text="대표이미지").grid(row=2, column=0, sticky="w", **pad)
+        self.thumbnail_path_var = tk.StringVar(value=self.config_data.get("thumbnail_path", ""))
+        ttk.Entry(tistory_frame, textvariable=self.thumbnail_path_var, width=36).grid(
+            row=2, column=1, sticky="w", padx=10, pady=4
+        )
+        ttk.Button(tistory_frame, text="파일 선택", command=self._choose_thumbnail).grid(
+            row=2, column=1, sticky="e", padx=10
+        )
+        ttk.Label(
+            tistory_frame, text="설정해두면 매 글마다 이 이미지가 자동으로 대표이미지로 들어갑니다.",
+            foreground="gray",
+        ).grid(row=3, column=1, sticky="w", padx=10)
+
+        ttk.Label(tistory_frame, text="카테고리").grid(row=4, column=0, sticky="w", **pad)
+        self.category_var = tk.StringVar(value=self.config_data.get("tistory_category", ""))
+        ttk.Entry(tistory_frame, textvariable=self.category_var, width=36).grid(
+            row=4, column=1, sticky="w", padx=10, pady=4
+        )
+        ttk.Label(
+            tistory_frame, text="티스토리에 만들어둔 카테고리 이름과 정확히 같아야 합니다. 비워두면 미지정.",
+            foreground="gray",
+        ).grid(row=5, column=1, sticky="w", padx=10)
+
         ttk.Label(
             tistory_frame,
             text=(
@@ -136,14 +161,14 @@ class SettingsDialog(tk.Toplevel):
             foreground="gray",
             justify="left",
             wraplength=480,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8))
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(4, 8))
 
         self.login_status_var = tk.StringVar(value="")
         ttk.Button(
             tistory_frame, text="티스토리 로그인 / 세션 갱신", command=self._start_login
-        ).grid(row=3, column=0, sticky="w", **pad)
+        ).grid(row=7, column=0, sticky="w", **pad)
         ttk.Label(tistory_frame, textvariable=self.login_status_var, foreground="gray").grid(
-            row=3, column=1, sticky="w", padx=10
+            row=7, column=1, sticky="w", padx=10
         )
 
         btn_frame = ttk.Frame(self)
@@ -192,6 +217,13 @@ class SettingsDialog(tk.Toplevel):
         else:
             self.login_status_var.set("로그인 대기 시간이 초과되었습니다.")
 
+    def _choose_thumbnail(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("이미지", "*.png *.jpg *.jpeg *.gif *.webp"), ("모든 파일", "*.*")]
+        )
+        if path:
+            self.thumbnail_path_var.set(path)
+
     def _save(self):
         self.config_data.update(
             {
@@ -201,6 +233,8 @@ class SettingsDialog(tk.Toplevel):
                 "camp_name": self.camp_name_var.get().strip() or "SK 네트웍스 Family AI 캠프",
                 "camp_gisu": self.camp_gisu_var.get().strip() or "35",
                 "camp_start_date": self.camp_start_var.get().strip() or "2026-07-07",
+                "thumbnail_path": self.thumbnail_path_var.get().strip(),
+                "tistory_category": self.category_var.get().strip(),
             }
         )
         storage.save_config(self.config_data)
@@ -224,6 +258,9 @@ class WilApp(tk.Tk):
         self._build_layout()
         self._build_statusbar()
 
+        if not self.config_data.get("gemini_api_key") or not self.config_data.get("tistory_blog_name"):
+            self.after(300, self.open_setup_wizard)
+
     # ---------- UI 구성 ----------
     def _build_menu(self):
         menubar = tk.Menu(self)
@@ -235,7 +272,12 @@ class WilApp(tk.Tk):
 
         settings_menu = tk.Menu(menubar, tearoff=0)
         settings_menu.add_command(label="API / 티스토리 설정...", command=self.open_settings)
+        settings_menu.add_command(label="초기 설정 도우미...", command=self.open_setup_wizard)
         menubar.add_cascade(label="설정", menu=settings_menu)
+
+        monthly_menu = tk.Menu(menubar, tearoff=0)
+        monthly_menu.add_command(label="월간 종합 회고 만들기...", command=self.open_monthly_review)
+        menubar.add_cascade(label="월간 회고", menu=monthly_menu)
 
         self.config(menu=menubar)
 
@@ -248,7 +290,7 @@ class WilApp(tk.Tk):
 
         header = ttk.Frame(left)
         header.pack(fill="x", pady=(0, 6))
-        ttk.Label(header, text="주차").pack(side="left")
+        ttk.Label(header, text="회차").pack(side="left")
         self.week_var = tk.IntVar(value=self._suggested_week())
         week_spin = ttk.Spinbox(
             header, from_=1, to=99, width=5, textvariable=self.week_var,
@@ -261,6 +303,11 @@ class WilApp(tk.Tk):
         ttk.Label(header, textvariable=self.title_preview_var, foreground="gray").pack(
             side="left"
         )
+        self.project_badge_var = tk.StringVar()
+        ttk.Label(
+            header, textvariable=self.project_badge_var, foreground="#c0392b",
+            font=("Consolas", 10, "bold"),
+        ).pack(side="left", padx=(10, 0))
 
         left_notebook = ttk.Notebook(left)
         left_notebook.pack(fill="both", expand=True)
@@ -295,17 +342,28 @@ class WilApp(tk.Tk):
         reflect_scrollbar.pack(side="right", fill="y")
 
         self.reflection_texts = []
+        self.reflection_choice_vars = []
+        self.reflection_option_frames = []
         for q in REFLECTION_QUESTIONS:
             ttk.Label(reflect_inner, text=q, wraplength=500, justify="left").pack(
                 anchor="w", padx=6, pady=(10, 2)
             )
-            t = tk.Text(reflect_inner, height=3, wrap="word", font=("Consolas", 10))
-            t.pack(fill="x", padx=6)
+            options_frame = ttk.Frame(reflect_inner)
+            options_frame.pack(anchor="w", fill="x", padx=6)
+            self.reflection_option_frames.append(options_frame)
+            self.reflection_choice_vars.append(tk.StringVar(value=""))
+
+            t = tk.Text(reflect_inner, height=2, wrap="word", font=("Consolas", 10))
+            t.pack(fill="x", padx=6, pady=(2, 0))
             self.reflection_texts.append(t)
         ttk.Label(
             reflect_inner,
-            text="비워두면 공부 메모만으로 성찰 부분을 추론합니다.",
+            text=(
+                "빠른 선택지는 '코드 파일' 탭에서 ① 이해도 질문 생성을 누르면 채워집니다.\n"
+                "선택지가 없거나 마음에 안 들면 아래 칸에 직접 입력하세요 (직접 입력이 선택지보다 우선)."
+            ),
             foreground="gray",
+            justify="left",
         ).pack(anchor="w", padx=6, pady=(10, 4))
 
         code_tab = ttk.Frame(left_notebook)
@@ -326,6 +384,62 @@ class WilApp(tk.Tk):
         ttk.Button(code_btn_row, text="선택 제거", command=self._remove_code_file).pack(
             side="left", padx=6
         )
+        ttk.Button(
+            code_btn_row, text="① 이해도 질문 생성", command=self._generate_comprehension
+        ).pack(side="left", padx=6)
+
+        quiz_tab = ttk.Frame(left_notebook)
+        left_notebook.add(quiz_tab, text="이해도 확인")
+        self.quiz_canvas = tk.Canvas(quiz_tab, highlightthickness=0)
+        quiz_scrollbar = ttk.Scrollbar(quiz_tab, orient="vertical", command=self.quiz_canvas.yview)
+        self.quiz_inner = ttk.Frame(self.quiz_canvas)
+        self.quiz_inner.bind(
+            "<Configure>",
+            lambda e: self.quiz_canvas.configure(scrollregion=self.quiz_canvas.bbox("all")),
+        )
+        self.quiz_canvas.create_window((0, 0), window=self.quiz_inner, anchor="nw")
+        self.quiz_canvas.configure(yscrollcommand=quiz_scrollbar.set)
+        self.quiz_canvas.pack(side="left", fill="both", expand=True)
+        quiz_scrollbar.pack(side="right", fill="y")
+        self.quiz_items: list = []
+        self.quiz_placeholder = ttk.Label(
+            self.quiz_inner,
+            text="코드 파일을 첨부하고 '① 이해도 질문 생성'을 눌러주세요.",
+            foreground="gray",
+        )
+        self.quiz_placeholder.pack(anchor="w", padx=6, pady=10)
+
+        project_tab = ttk.Frame(left_notebook)
+        left_notebook.add(project_tab, text="프로젝트 정보")
+        ttk.Label(
+            project_tab,
+            text="🚀 프로젝트 주간(단위/최종 프로젝트)에만 사용됩니다. 여기 채운 내용이 있으면\n"
+            "'프로젝트 산출물 소개' 섹션에 자신감 있게 소개하듯 반영되고, 이미지는 본문에 자동 삽입됩니다.",
+            foreground="gray", justify="left",
+        ).pack(anchor="w", padx=6, pady=(10, 8))
+
+        ttk.Label(project_tab, text="GitHub 저장소 주소").pack(anchor="w", padx=6)
+        self.github_url_var = tk.StringVar()
+        ttk.Entry(project_tab, textvariable=self.github_url_var).pack(fill="x", padx=6, pady=(2, 10))
+
+        ttk.Label(project_tab, text="산출물 소개 / README 내용").pack(anchor="w", padx=6)
+        self.deliverable_notes_text = tk.Text(project_tab, height=6, wrap="word", font=("Consolas", 10))
+        self.deliverable_notes_text.pack(fill="x", padx=6, pady=(2, 10))
+
+        ttk.Label(project_tab, text="산출물 이미지 (실행 화면, 결과물 캡처 등)").pack(
+            anchor="w", padx=6
+        )
+        self.deliverable_image_paths: list = []
+        self.deliverable_image_listbox = tk.Listbox(project_tab, height=5)
+        self.deliverable_image_listbox.pack(fill="both", expand=True, padx=6, pady=4)
+        deliverable_btn_row = ttk.Frame(project_tab)
+        deliverable_btn_row.pack(fill="x", padx=6, pady=(0, 8))
+        ttk.Button(
+            deliverable_btn_row, text="이미지 첨부", command=self._attach_deliverable_images
+        ).pack(side="left")
+        ttk.Button(
+            deliverable_btn_row, text="선택 제거", command=self._remove_deliverable_image
+        ).pack(side="left", padx=6)
 
         ttk.Button(left, text="파일에서 불러오기", command=self.load_notes_from_file).pack(
             anchor="e", pady=6
@@ -375,7 +489,7 @@ class WilApp(tk.Tk):
         )
         ttk.Label(
             meta_tab,
-            text="설정의 캠프명/기수 + 왼쪽 상단 '주차'로 자동 조립됩니다. 필요하면 직접 수정 가능.",
+            text="설정의 캠프명/기수 + 왼쪽 상단 '회차'로 자동 조립됩니다. 필요하면 직접 수정 가능.",
             foreground="gray",
         ).pack(anchor="w", padx=8)
 
@@ -408,6 +522,12 @@ class WilApp(tk.Tk):
     def open_settings(self):
         SettingsDialog(self, self.config_data, on_save=self._on_settings_saved)
 
+    def open_monthly_review(self):
+        MonthlyReviewDialog(self, self.config_data, fit_geometry)
+
+    def open_setup_wizard(self):
+        SetupWizard(self, self.config_data, fit_geometry, on_finish=self._on_settings_saved)
+
     def _on_settings_saved(self, new_config: dict):
         self.config_data = new_config
         self._on_week_changed()
@@ -425,36 +545,56 @@ class WilApp(tk.Tk):
     def _suggested_week(self) -> int:
         return curriculum.suggested_week_number(date.today(), self._camp_start_date())
 
+    def _current_week_number(self) -> int:
+        try:
+            return int(self.week_var.get())
+        except (tk.TclError, ValueError):
+            return self._suggested_week()
+
+    def _is_current_project_week(self) -> bool:
+        return curriculum.is_project_week(self._current_week_number(), self._camp_start_date())
+
     def _compute_title(self) -> str:
         camp_name = self.config_data.get("camp_name", "SK 네트웍스 Family AI 캠프")
         gisu = self.config_data.get("camp_gisu", "35")
-        try:
-            week = int(self.week_var.get())
-        except (tk.TclError, ValueError):
-            week = self._suggested_week()
-        return f"[{camp_name}] {gisu}기 {week}주차 회고"
+        week = self._current_week_number()
+        label = "프로젝트 회고" if self._is_current_project_week() else "회고"
+        return f"[{camp_name}] {gisu}기 {week}회차 {label}"
 
     def _on_week_changed(self):
         computed = self._compute_title()
         self.title_preview_var.set(f"제목: {computed}")
         self.title_var.set(computed)
+        if self._is_current_project_week():
+            self.project_badge_var.set("🚀 프로젝트 주간")
+        else:
+            self.project_badge_var.set("")
         if self.last_data:
             self._refresh_preview()
 
     def _current_week_topic(self) -> str:
-        try:
-            week = int(self.week_var.get())
-        except (tk.TclError, ValueError):
-            week = self._suggested_week()
-        return curriculum.topics_for_week(week, self._camp_start_date())
+        return curriculum.topics_for_week(self._current_week_number(), self._camp_start_date())
 
     def _reflection_block(self) -> str:
         blocks = []
-        for question, widget in zip(REFLECTION_QUESTIONS, self.reflection_texts):
-            answer = widget.get("1.0", "end").strip()
+        for i, question in enumerate(REFLECTION_QUESTIONS):
+            custom = self.reflection_texts[i].get("1.0", "end").strip()
+            choice = self.reflection_choice_vars[i].get() if i < len(self.reflection_choice_vars) else ""
+            answer = custom or choice
             if answer:
                 blocks.append(f"Q: {question}\nA: {answer}")
         return "\n\n".join(blocks)
+
+    def _apply_reflection_options(self, reflection_options: list):
+        for i, opts in enumerate(reflection_options):
+            if i >= len(self.reflection_option_frames):
+                break
+            container = self.reflection_option_frames[i]
+            for child in container.winfo_children():
+                child.destroy()
+            var = self.reflection_choice_vars[i]
+            for opt in opts:
+                ttk.Radiobutton(container, text=opt, value=opt, variable=var).pack(anchor="w")
 
     def load_notes_from_file(self):
         path = filedialog.askopenfilename(
@@ -485,6 +625,154 @@ class WilApp(tk.Tk):
             self.code_listbox.delete(index)
             del self.code_file_paths[index]
 
+    def _attach_deliverable_images(self):
+        paths = filedialog.askopenfilenames(
+            filetypes=[("이미지", "*.png *.jpg *.jpeg *.gif *.webp"), ("모든 파일", "*.*")]
+        )
+        for p in paths:
+            if p not in self.deliverable_image_paths:
+                self.deliverable_image_paths.append(p)
+                self.deliverable_image_listbox.insert("end", p)
+        if paths:
+            self.set_status(f"산출물 이미지 {len(paths)}개 첨부됨")
+
+    def _remove_deliverable_image(self):
+        selection = list(self.deliverable_image_listbox.curselection())
+        for index in reversed(selection):
+            self.deliverable_image_listbox.delete(index)
+            del self.deliverable_image_paths[index]
+
+    def _generate_comprehension(self):
+        if not self.config_data.get("gemini_api_key"):
+            messagebox.showwarning("안내", "설정에서 Gemini API 키를 먼저 입력해주세요.")
+            return
+        if not self.code_file_paths:
+            messagebox.showwarning("안내", "먼저 '코드 파일' 탭에서 파일을 첨부해주세요.")
+            return
+
+        code_context = code_files.extract_code_context(self.code_file_paths)
+        self.set_status("이해도 확인 질문을 만드는 중...")
+        result_queue: "queue.Queue" = queue.Queue()
+
+        def worker():
+            try:
+                result = ai_generator.generate_comprehension_questions(
+                    api_key=self.config_data["gemini_api_key"],
+                    model=self.config_data.get("gemini_model", "gemini-flash-latest"),
+                    code_context=code_context,
+                    reflection_questions=REFLECTION_QUESTIONS,
+                )
+                result_queue.put(("ok", result))
+            except Exception as exc:  # noqa: BLE001
+                result_queue.put(("error", str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._poll_comprehension(result_queue)
+
+    def _poll_comprehension(self, result_queue: "queue.Queue"):
+        try:
+            status, payload = result_queue.get_nowait()
+        except queue.Empty:
+            self.after(150, lambda: self._poll_comprehension(result_queue))
+            return
+
+        if status == "error":
+            self.set_status("이해도 질문 생성 실패")
+            messagebox.showerror("실패", payload)
+            return
+
+        self._build_quiz_ui(payload["questions"])
+        self._apply_reflection_options(payload["reflection_options"])
+        self.set_status(f"이해도 질문 {len(payload['questions'])}개 + 성찰 빠른 선택지 생성 완료")
+
+    def _build_quiz_ui(self, questions: list):
+        for child in self.quiz_inner.winfo_children():
+            child.destroy()
+        self.quiz_items = []
+
+        for i, q in enumerate(questions, start=1):
+            qtext = q.get("question", "")
+            qtype = q.get("type", "short")
+            ttk.Label(
+                self.quiz_inner, text=f"{i}. {qtext}", wraplength=500, justify="left"
+            ).pack(anchor="w", padx=6, pady=(12, 4))
+
+            if qtype == "mc" and q.get("options"):
+                var = tk.StringVar(value="")
+                for opt in q["options"]:
+                    ttk.Radiobutton(
+                        self.quiz_inner, text=opt, value=opt, variable=var
+                    ).pack(anchor="w", padx=20)
+                custom_widget = tk.Text(self.quiz_inner, height=1, wrap="word", font=("Consolas", 10))
+                custom_widget.pack(fill="x", padx=40, pady=(2, 0))
+                ttk.Label(
+                    self.quiz_inner, text="(선택지에 없으면 위 칸에 직접 입력, 직접 입력이 우선)",
+                    foreground="gray",
+                ).pack(anchor="w", padx=40)
+                self.quiz_items.append(
+                    {"question": qtext, "kind": "mc", "var": var, "custom_widget": custom_widget}
+                )
+            else:
+                text_widget = tk.Text(self.quiz_inner, height=2, wrap="word", font=("Consolas", 10))
+                text_widget.pack(fill="x", padx=20)
+                self.quiz_items.append({"question": qtext, "kind": "short", "widget": text_widget})
+
+        ttk.Button(
+            self.quiz_inner, text="② 공부 메모 초안 작성", command=self._draft_notes_from_quiz
+        ).pack(anchor="w", padx=6, pady=16)
+
+    def _collect_quiz_answers(self) -> list:
+        pairs = []
+        for item in self.quiz_items:
+            if item["kind"] == "mc":
+                custom = item["custom_widget"].get("1.0", "end").strip()
+                answer = custom or item["var"].get()
+            else:
+                answer = item["widget"].get("1.0", "end").strip()
+            pairs.append((item["question"], answer))
+        return pairs
+
+    def _draft_notes_from_quiz(self):
+        if not self.config_data.get("gemini_api_key"):
+            messagebox.showwarning("안내", "설정에서 Gemini API 키를 먼저 입력해주세요.")
+            return
+
+        qa_pairs = self._collect_quiz_answers()
+        code_context = code_files.extract_code_context(self.code_file_paths)
+        self.set_status("공부 메모 초안을 작성하는 중...")
+        result_queue: "queue.Queue" = queue.Queue()
+
+        def worker():
+            try:
+                draft = ai_generator.draft_study_notes(
+                    api_key=self.config_data["gemini_api_key"],
+                    model=self.config_data.get("gemini_model", "gemini-flash-latest"),
+                    code_context=code_context,
+                    qa_pairs=qa_pairs,
+                )
+                result_queue.put(("ok", draft))
+            except Exception as exc:  # noqa: BLE001
+                result_queue.put(("error", str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._poll_notes_draft(result_queue)
+
+    def _poll_notes_draft(self, result_queue: "queue.Queue"):
+        try:
+            status, payload = result_queue.get_nowait()
+        except queue.Empty:
+            self.after(150, lambda: self._poll_notes_draft(result_queue))
+            return
+
+        if status == "error":
+            self.set_status("공부 메모 초안 작성 실패")
+            messagebox.showerror("실패", payload)
+            return
+
+        self.notes_text.delete("1.0", "end")
+        self.notes_text.insert("1.0", payload)
+        self.set_status("공부 메모 초안을 채웠습니다. 필요하면 직접 수정하세요.")
+
     def run_generate(self, regenerate: bool):
         if self.busy:
             return
@@ -504,6 +792,10 @@ class WilApp(tk.Tk):
         reflection_block = self._reflection_block()
         curriculum_topic = self._current_week_topic()
         code_context = code_files.extract_code_context(self.code_file_paths)
+        current_week = self._current_week_number()
+        is_project_week = self._is_current_project_week()
+        github_url = self.github_url_var.get().strip()
+        deliverable_notes = self.deliverable_notes_text.get("1.0", "end").strip()
 
         def worker():
             try:
@@ -516,6 +808,10 @@ class WilApp(tk.Tk):
                     reflection_answers=reflection_block,
                     curriculum_topic=curriculum_topic,
                     code_context=code_context,
+                    current_week=current_week,
+                    is_project_week=is_project_week,
+                    github_url=github_url,
+                    deliverable_notes=deliverable_notes,
                 )
                 self.result_queue.put(("ok", data))
             except Exception as exc:  # noqa: BLE001
@@ -554,10 +850,13 @@ class WilApp(tk.Tk):
 
         self._refresh_preview()
 
+        week = self._current_week_number()
+
         self.history = storage.load_history()
         storage.append_history_entry(
             {
                 "date": date.today().isoformat(),
+                "week": week,
                 "title": self.title_var.get(),
                 "tags": data.get("tags", []),
                 "one_line_summary": data.get("one_line_summary", ""),
@@ -680,6 +979,7 @@ class WilApp(tk.Tk):
         title = self.title_var.get().strip() or "이번 주 주간회고"
         tags = [t.strip() for t in self.tags_var.get().split(",") if t.strip()]
         html_content = self._body_only_html()
+        self._upload_week = self._current_week_number()
 
         confirm = ConfirmUploadDialog(self, title=title, blog=blog_name)
         self.wait_window(confirm)
@@ -698,6 +998,9 @@ class WilApp(tk.Tk):
                     visibility_label=confirm.visibility_var.get(),
                     on_status=lambda msg: progress.result_queue.put(("status", msg)),
                     should_cancel=lambda: progress.cancelled,
+                    thumbnail_path=self.config_data.get("thumbnail_path", ""),
+                    category=self.config_data.get("tistory_category", ""),
+                    body_image_paths=list(self.deliverable_image_paths),
                 )
                 progress.result_queue.put(("done", result))
             except Exception as exc:  # noqa: BLE001
@@ -731,6 +1034,9 @@ class WilApp(tk.Tk):
         if not url:
             self.set_status("티스토리 업로드가 취소되었거나 결과를 확인하지 못했습니다.")
             return
+
+        if getattr(self, "_upload_week", None) is not None:
+            storage.set_history_url(self._upload_week, url)
 
         self.set_status(f"티스토리 업로드 완료: {url}")
         messagebox.showinfo("업로드 완료", f"티스토리에 게시되었습니다.\n{url}")

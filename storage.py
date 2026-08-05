@@ -8,11 +8,13 @@ HISTORY_PATH = BASE_DIR / "history.json"
 
 DEFAULT_CONFIG = {
     "gemini_api_key": "",
-    "gemini_model": "gemini-flash-latest",
+    "gemini_model": "gemini-flash-lite-latest",
     "tistory_blog_name": "",
     "camp_name": "SK 네트웍스 Family AI 캠프",
     "camp_gisu": "35",
     "camp_start_date": "2026-07-07",
+    "thumbnail_path": "",
+    "tistory_category": "SKN35회고록",
 }
 
 
@@ -44,6 +46,23 @@ def save_history(history: list) -> None:
 
 
 def append_history_entry(entry: dict, keep_last: int = 26) -> None:
+    """같은 주차(week)로 이미 저장된 항목이 있으면 새로 덮어쓴다 (다시 생성 시
+    같은 주차가 중복으로 쌓여서 나중에 '지난주'로 잘못 인식되는 것을 방지)."""
     history = load_history()
+    week = entry.get("week")
+    if isinstance(week, int):
+        history = [h for h in history if h.get("week") != week]
     history.append(entry)
+    history.sort(key=lambda h: h.get("week") if isinstance(h.get("week"), int) else 0)
     save_history(history[-keep_last:])
+
+
+def set_history_url(week: int, url: str) -> None:
+    """티스토리 업로드 성공 후, 해당 주차 이력 항목에 실제 게시 URL을 기록한다.
+    월간 종합 회고에서 그 달의 글 링크들을 모을 때 쓴다."""
+    history = load_history()
+    for entry in history:
+        if entry.get("week") == week:
+            entry["url"] = url
+            break
+    save_history(history)
