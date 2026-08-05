@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 import ai_generator
+import code_files
 import curriculum
 import markdown_utils
 import storage
@@ -36,7 +37,11 @@ def fit_geometry(win, want_w: int, want_h: int, min_w: int = 400, min_h: int = 3
     h = max(min(want_h, screen_h - 167), min_h)
     x = (screen_w - w) // 2
     y = 15
-    win.geometry(f"{w}x{h}+{x}+{y}")
+    geom = f"{w}x{h}+{x}+{y}"
+    win.geometry(geom)
+    # Windows가 창을 매핑하면서 초기 위치를 임의로 바꾸는 경우가 있어,
+    # 창이 자리잡은 뒤 같은 위치를 강제로 한 번 더 지정한다.
+    win.after(150, lambda: win.geometry(geom))
 
 
 class SettingsDialog(tk.Toplevel):
@@ -303,6 +308,25 @@ class WilApp(tk.Tk):
             foreground="gray",
         ).pack(anchor="w", padx=6, pady=(10, 4))
 
+        code_tab = ttk.Frame(left_notebook)
+        left_notebook.add(code_tab, text="코드 파일")
+        ttk.Label(
+            code_tab,
+            text="이번 주 관련 .py / .ipynb 파일을 첨부하면, 관련 코드를 그대로 인용해서 배치합니다.",
+            wraplength=520, justify="left",
+        ).pack(anchor="w", padx=6, pady=(10, 6))
+        self.code_file_paths: list = []
+        self.code_listbox = tk.Listbox(code_tab, height=8)
+        self.code_listbox.pack(fill="both", expand=True, padx=6, pady=4)
+        code_btn_row = ttk.Frame(code_tab)
+        code_btn_row.pack(fill="x", padx=6, pady=(0, 8))
+        ttk.Button(code_btn_row, text="파일 첨부", command=self._attach_code_files).pack(
+            side="left"
+        )
+        ttk.Button(code_btn_row, text="선택 제거", command=self._remove_code_file).pack(
+            side="left", padx=6
+        )
+
         ttk.Button(left, text="파일에서 불러오기", command=self.load_notes_from_file).pack(
             anchor="e", pady=6
         )
@@ -444,6 +468,23 @@ class WilApp(tk.Tk):
         self.notes_text.insert("1.0", content)
         self.set_status(f"메모 불러옴: {path}")
 
+    def _attach_code_files(self):
+        paths = filedialog.askopenfilenames(
+            filetypes=[("Python / Jupyter", "*.py *.ipynb"), ("모든 파일", "*.*")]
+        )
+        for p in paths:
+            if p not in self.code_file_paths:
+                self.code_file_paths.append(p)
+                self.code_listbox.insert("end", p)
+        if paths:
+            self.set_status(f"코드 파일 {len(paths)}개 첨부됨")
+
+    def _remove_code_file(self):
+        selection = list(self.code_listbox.curselection())
+        for index in reversed(selection):
+            self.code_listbox.delete(index)
+            del self.code_file_paths[index]
+
     def run_generate(self, regenerate: bool):
         if self.busy:
             return
@@ -462,6 +503,7 @@ class WilApp(tk.Tk):
 
         reflection_block = self._reflection_block()
         curriculum_topic = self._current_week_topic()
+        code_context = code_files.extract_code_context(self.code_file_paths)
 
         def worker():
             try:
@@ -473,6 +515,7 @@ class WilApp(tk.Tk):
                     regenerate=regenerate,
                     reflection_answers=reflection_block,
                     curriculum_topic=curriculum_topic,
+                    code_context=code_context,
                 )
                 self.result_queue.put(("ok", data))
             except Exception as exc:  # noqa: BLE001

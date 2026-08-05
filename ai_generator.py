@@ -28,6 +28,12 @@ SYSTEM_PROMPT = """너는 개발 부트캠프생의 주간회고(WIL, Weekly I L
 - "다음 주 목표"는 성찰 질문 답변의 "다음 주 계획" 항목이 있으면 그것을 우선 반영하고, 부족하면 공부 메모 기반으로 보충한다.
 - 기술적 사실(Facts, 트러블슈팅)은 어디까지나 공부 메모 기반으로 작성하고, 성찰 답변의 감정적 표현을 기술 설명에 섞지 않는다.
 
+[첨부된 코드 파일 활용 규칙]
+사용자 메시지에 "첨부된 코드 파일"이 포함되어 있으면(.py/.ipynb에서 추출한 실제 코드):
+- "이번 주 학습"이나 "트러블슈팅" 섹션에서 관련 있는 부분은 반드시 파일에 있는 코드를 그대로 발췌해서 마크다운 코드펜스(```python ... ```)로 인용한다. 코드를 요약하지 말고, 짧고 핵심적인 부분만 골라 그대로 옮긴다.
+- 코드를 지어내거나 변형하지 말 것. 첨부된 코드에 없는 내용은 인용하지 않는다.
+- 어느 파일의 어떤 부분인지 알 수 있게 코드 앞에 짧게 맥락을 설명하는 문장을 붙인다.
+
 [출력 형식]
 반드시 아래 JSON 스키마 하나만 출력한다. 코드펜스나 설명 문구 없이 순수 JSON 텍스트만 출력할 것.
 {
@@ -48,6 +54,9 @@ USER_PROMPT_TEMPLATE = """다음은 이번 주 공부 메모다. 이 내용만 �
 
 [성찰 질문 답변 (없으면 "(작성 안 함)")]
 {reflection_answers}
+
+[첨부된 코드 파일 (없으면 "(첨부 없음)")]
+{code_context}
 
 [과거 회고 요약 (최근 순, 없으면 빈 목록)]
 {history_summary}
@@ -91,6 +100,7 @@ def generate_wil(
     regenerate: bool = False,
     curriculum_topic: str = "",
     reflection_answers: str = "",
+    code_context: str = "",
 ) -> dict:
     if not api_key:
         raise ValueError("Gemini API 키가 설정되지 않았습니다. 설정 메뉴에서 입력해주세요.")
@@ -110,6 +120,7 @@ def generate_wil(
         extra_instruction=extra_instruction,
         curriculum_topic=curriculum_topic or "(정보 없음)",
         reflection_answers=reflection_answers.strip() or "(작성 안 함)",
+        code_context=code_context.strip() or "(첨부 없음)",
     )
 
     response = client.models.generate_content(
@@ -118,11 +129,20 @@ def generate_wil(
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             response_mime_type="application/json",
-            max_output_tokens=4000,
+            max_output_tokens=8192,
         ),
     )
 
     raw_text = response.text or ""
+
+    finish_reason = None
+    if response.candidates:
+        finish_reason = getattr(response.candidates[0], "finish_reason", None)
+    if finish_reason is not None and str(finish_reason).endswith("MAX_TOKENS"):
+        raise ValueError(
+            "AI 응답이 출력 길이 제한에 걸려 중간에 잘렸습니다. 메모를 조금 줄이거나, "
+            "다시 생성을 시도해주세요."
+        )
 
     try:
         data = _extract_json(raw_text)
