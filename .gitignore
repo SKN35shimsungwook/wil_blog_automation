@@ -4,3 +4,7 @@ tistory_session.json
 output/
 __pycache__/
 *.pyc
+.build-venv/
+build/
+dist/
+*.spec
