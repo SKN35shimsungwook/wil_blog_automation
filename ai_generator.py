@@ -99,6 +99,8 @@ markdown_body는 위에서 설명한 구조 대신 아래 구조를 따른다 (�
 (무엇을 만들었는지, 목표가 무엇이었는지 — 메모에 있는 내용 기반)
 
 ## 내가 맡은 역할과 기여
+사용자 메시지에 "내 역할"이 주어지면 반드시 그 내용을 그대로 근거로 삼아 구체적으로 서술한다(지어내거나
+과장하지 않는다). 주어지지 않았으면 메모 내용에서 합리적으로 유추해서 작성한다.
 (팀 프로젝트면 담당 파트, 개인 프로젝트면 무엇을 직접 설계/구현했는지)
 
 ## 기술적 도전과 해결 과정 (트러블슈팅)
@@ -216,6 +218,7 @@ def generate_wil(
     is_project_week: bool = False,
     github_url: str = "",
     deliverable_notes: str = "",
+    my_role: str = "",
 ) -> dict:
     if not api_key:
         raise ValueError("Gemini API 키가 설정되지 않았습니다. 설정 메뉴에서 입력해주세요.")
@@ -230,6 +233,8 @@ def generate_wil(
         else ""
     )
     project_info_parts = []
+    if my_role.strip():
+        project_info_parts.append(f"내 역할: {my_role.strip()}")
     if github_url.strip():
         project_info_parts.append(f"GitHub 저장소: {github_url.strip()}")
     if deliverable_notes.strip():
@@ -270,6 +275,80 @@ def generate_wil(
     for key in ("title_suggestions", "tags", "one_line_summary", "markdown_body"):
         if key not in data:
             raise ValueError(f"AI 응답에 '{key}' 항목이 없습니다.\n\n원본 응답:\n{raw_text}")
+
+    return data
+
+
+MERGE_SYSTEM_PROMPT = """너는 개발 부트캠프생의 주간회고(WIL)를 편집하는 전문 테크 블로그 에디터다.
+같은 주에 대해 따로 작성된 초안 두 개가 주어진다:
+1. 프로젝트 회고 초안 (그 주에 진행한 프로젝트에 대한 회고)
+2. 수업 내용 회고 초안 (같은 주에 별도로 진행된 일반 수업 내용에 대한 회고)
+
+이 둘을 절대 단순히 이어붙이거나 "프로젝트는 이랬고, 수업은 이랬다" 식으로 나열하지 마라.
+프로젝트 회고 초안의 구조(개요/역할/트러블슈팅/협업/산출물 소개/아쉬운 점/성장/다음 주 목표/응원)를
+전체 글의 기본 뼈대로 삼되, 수업 내용 회고 초안에 있는 학습/트러블슈팅을 흐름이 자연스러운 위치에
+녹여 넣어서 "이 주에 실제로 있었던 일"이 하나의 이야기로 읽히게 재구성해라.
+예를 들어 수업에서 배운 개념이 프로젝트에 실제로 도움이 됐다면 그 연결을 짚어주고, 관련 없으면
+"이번 주 학습" 같은 섹션을 하나 추가해서 자연스럽게 포함시켜라(단, 뼈대 자체가 산산조각 나지 않게).
+
+[반드시 지킬 것]
+- 두 초안에 이미 쓰여 있는 사실만 사용한다. 새로운 사실을 지어내지 않는다.
+- "~습니다" 금지. "~했다/~였다/~한다/~배웠다" 같은 평서형 서술체를 유지한다.
+- 두 초안에서 겹치거나 비슷한 내용은 한 번만 자연스럽게 정리해서 쓰고, 중복해서 나열하지 않는다.
+- 최상위 제목(H1)은 포함하지 말고 '## 한 줄 요약'부터 시작한다.
+- 코드 인용이 두 초안에 각각 있다면 그대로 유지해도 되지만, 같은 코드를 두 번 반복해서 인용하지 않는다.
+
+[출력 형식]
+반드시 아래 JSON 스키마 하나만 출력한다. 코드펜스나 설명 문구 없이 순수 JSON만.
+{
+  "title_suggestions": ["제목 후보 5개"],
+  "tags": ["기술 태그들, 프로젝트+수업 내용을 합쳐 5~10개"],
+  "one_line_summary": "이번 주(프로젝트+수업)를 한 문장으로 요약",
+  "markdown_body": "위에서 설명한 대로 하나로 자연스럽게 합쳐진 최종 마크다운 본문"
+}
+"""
+
+MERGE_USER_PROMPT_TEMPLATE = """다음 두 초안을 하나의 자연스러운 주간회고로 합쳐라.
+
+[프로젝트 회고 초안]
+{project_markdown}
+
+[수업 내용 회고 초안]
+{class_markdown}
+"""
+
+
+def merge_project_and_class_reviews(
+    api_key: str, model: str, project_markdown: str, class_markdown: str
+) -> dict:
+    if not api_key:
+        raise ValueError("Gemini API 키가 설정되지 않았습니다.")
+
+    client = genai.Client(api_key=api_key)
+    user_prompt = MERGE_USER_PROMPT_TEMPLATE.format(
+        project_markdown=project_markdown.strip(),
+        class_markdown=class_markdown.strip(),
+    )
+    response = client.models.generate_content(
+        model=model,
+        contents=user_prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=MERGE_SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=WIL_RESPONSE_SCHEMA,
+            max_output_tokens=8192,
+        ),
+    )
+    raw_text = response.text or ""
+    _raise_if_truncated(response)
+    try:
+        data = _extract_json(raw_text)
+    except (json.JSONDecodeError, AttributeError) as exc:
+        raise ValueError(f"합치기 응답을 JSON으로 해석하지 못했습니다: {exc}\n\n원본 응답:\n{raw_text}") from exc
+
+    for key in ("title_suggestions", "tags", "one_line_summary", "markdown_body"):
+        if key not in data:
+            raise ValueError(f"합치기 응답에 '{key}' 항목이 없습니다.\n\n원본 응답:\n{raw_text}")
 
     return data
 

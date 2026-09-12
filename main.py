@@ -27,6 +27,14 @@ REFLECTION_QUESTIONS = [
     "다음 주에는 구체적으로 무엇을 더 연습/예습하고 싶나요?",
 ]
 
+PROJECT_REFLECTION_QUESTIONS = [
+    "이번 프로젝트에서 내가 맡은 역할을 스스로 몇 점(100점 만점)으로 평가하나요? 그 이유는?",
+    "이번 프로젝트를 통해 새롭게 이해하게 된 기술/개념은 무엇인가요?",
+    "협업(또는 혼자 진행하며) 가장 어려웠던 점과 어떻게 해결했나요?",
+    "이번 프로젝트에서 가장 아쉬웠던 부분은?",
+    "다음 프로젝트에서는 어떤 부분을 더 발전시키고 싶나요?",
+]
+
 
 def fit_geometry(win, want_w: int, want_h: int, min_w: int = 400, min_h: int = 300):
     """화면 해상도보다 창이 커서 버튼이 화면 밖으로 잘리는 것을 방지.
@@ -341,40 +349,18 @@ class WilApp(tk.Tk):
         reflect_scrollbar = ttk.Scrollbar(
             reflect_tab, orient="vertical", command=reflect_canvas.yview
         )
-        reflect_inner = ttk.Frame(reflect_canvas)
-        reflect_inner.bind(
+        self.reflect_inner = ttk.Frame(reflect_canvas)
+        self.reflect_inner.bind(
             "<Configure>",
             lambda e: reflect_canvas.configure(scrollregion=reflect_canvas.bbox("all")),
         )
-        reflect_canvas.create_window((0, 0), window=reflect_inner, anchor="nw")
+        reflect_canvas.create_window((0, 0), window=self.reflect_inner, anchor="nw")
         reflect_canvas.configure(yscrollcommand=reflect_scrollbar.set)
         reflect_canvas.pack(side="left", fill="both", expand=True)
         reflect_scrollbar.pack(side="right", fill="y")
 
-        self.reflection_texts = []
-        self.reflection_choice_vars = []
-        self.reflection_option_frames = []
-        for q in REFLECTION_QUESTIONS:
-            ttk.Label(reflect_inner, text=q, wraplength=500, justify="left").pack(
-                anchor="w", padx=6, pady=(10, 2)
-            )
-            options_frame = ttk.Frame(reflect_inner)
-            options_frame.pack(anchor="w", fill="x", padx=6)
-            self.reflection_option_frames.append(options_frame)
-            self.reflection_choice_vars.append(tk.StringVar(value=""))
-
-            t = tk.Text(reflect_inner, height=2, wrap="word", font=("Consolas", 10))
-            t.pack(fill="x", padx=6, pady=(2, 0))
-            self.reflection_texts.append(t)
-        ttk.Label(
-            reflect_inner,
-            text=(
-                "빠른 선택지는 '코드 파일' 탭에서 ① 이해도 질문 생성을 누르면 채워집니다.\n"
-                "선택지가 없거나 마음에 안 들면 아래 칸에 직접 입력하세요 (직접 입력이 선택지보다 우선)."
-            ),
-            foreground="gray",
-            justify="left",
-        ).pack(anchor="w", padx=6, pady=(10, 4))
+        self.current_reflection_questions = None
+        self._render_reflection_questions(REFLECTION_QUESTIONS)
 
         code_tab = ttk.Frame(left_notebook)
         left_notebook.add(code_tab, text="코드 파일")
@@ -428,6 +414,15 @@ class WilApp(tk.Tk):
             foreground="gray", justify="left",
         ).pack(anchor="w", padx=6, pady=(10, 8))
 
+        ttk.Label(project_tab, text="이번 프로젝트에서 내 역할").pack(anchor="w", padx=6)
+        self.my_role_var = tk.StringVar()
+        ttk.Entry(project_tab, textvariable=self.my_role_var).pack(fill="x", padx=6, pady=(2, 4))
+        ttk.Label(
+            project_tab,
+            text="예: 크롤링/전처리 파트 담당, 백엔드 API 설계 및 구현 등",
+            foreground="gray",
+        ).pack(anchor="w", padx=6, pady=(0, 10))
+
         ttk.Label(project_tab, text="GitHub 저장소 주소").pack(anchor="w", padx=6)
         self.github_url_var = tk.StringVar()
         ttk.Entry(project_tab, textvariable=self.github_url_var).pack(fill="x", padx=6, pady=(2, 10))
@@ -450,6 +445,21 @@ class WilApp(tk.Tk):
         ttk.Button(
             deliverable_btn_row, text="선택 제거", command=self._remove_deliverable_image
         ).pack(side="left", padx=6)
+
+        ttk.Separator(project_tab, orient="horizontal").pack(fill="x", padx=6, pady=(4, 10))
+
+        self.has_class_content_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            project_tab,
+            text="이번 주에 프로젝트 외 수업 내용도 있었음 (선택 시 프로젝트 회고와 자연스럽게 합쳐서 생성)",
+            variable=self.has_class_content_var,
+            command=self._on_class_content_toggle,
+        ).pack(anchor="w", padx=6)
+
+        self.class_content_text = tk.Text(
+            project_tab, height=5, wrap="word", font=("Consolas", 10), state="disabled"
+        )
+        self.class_content_text.pack(fill="x", padx=6, pady=(4, 10))
 
         ttk.Button(left, text="파일에서 불러오기", command=self.load_notes_from_file).pack(
             anchor="e", pady=6
@@ -575,19 +585,54 @@ class WilApp(tk.Tk):
         computed = self._compute_title()
         self.title_preview_var.set(f"제목: {computed}")
         self.title_var.set(computed)
-        if self._is_current_project_week():
+        is_project = self._is_current_project_week()
+        if is_project:
             self.project_badge_var.set("🚀 프로젝트 주간")
         else:
             self.project_badge_var.set("")
+        target_questions = PROJECT_REFLECTION_QUESTIONS if is_project else REFLECTION_QUESTIONS
+        if target_questions is not self.current_reflection_questions:
+            self._render_reflection_questions(target_questions)
         if self.last_data:
             self._refresh_preview()
 
     def _current_week_topic(self) -> str:
         return curriculum.topics_for_week(self._current_week_number(), self._camp_start_date())
 
+    def _render_reflection_questions(self, questions: list):
+        """성찰 질문 탭을 새 질문 목록으로 다시 그린다 (일반 주간 <-> 프로젝트 주간 전환 시 사용)."""
+        for child in self.reflect_inner.winfo_children():
+            child.destroy()
+
+        self.current_reflection_questions = questions
+        self.reflection_texts = []
+        self.reflection_choice_vars = []
+        self.reflection_option_frames = []
+        for q in questions:
+            ttk.Label(self.reflect_inner, text=q, wraplength=500, justify="left").pack(
+                anchor="w", padx=6, pady=(10, 2)
+            )
+            options_frame = ttk.Frame(self.reflect_inner)
+            options_frame.pack(anchor="w", fill="x", padx=6)
+            self.reflection_option_frames.append(options_frame)
+            self.reflection_choice_vars.append(tk.StringVar(value=""))
+
+            t = tk.Text(self.reflect_inner, height=2, wrap="word", font=("Consolas", 10))
+            t.pack(fill="x", padx=6, pady=(2, 0))
+            self.reflection_texts.append(t)
+        ttk.Label(
+            self.reflect_inner,
+            text=(
+                "빠른 선택지는 '코드 파일' 탭에서 ① 이해도 질문 생성을 누르면 채워집니다.\n"
+                "선택지가 없거나 마음에 안 들면 아래 칸에 직접 입력하세요 (직접 입력이 선택지보다 우선)."
+            ),
+            foreground="gray",
+            justify="left",
+        ).pack(anchor="w", padx=6, pady=(10, 4))
+
     def _reflection_block(self) -> str:
         blocks = []
-        for i, question in enumerate(REFLECTION_QUESTIONS):
+        for i, question in enumerate(self.current_reflection_questions):
             custom = self.reflection_texts[i].get("1.0", "end").strip()
             choice = self.reflection_choice_vars[i].get() if i < len(self.reflection_choice_vars) else ""
             answer = custom or choice
@@ -652,6 +697,11 @@ class WilApp(tk.Tk):
             self.deliverable_image_listbox.delete(index)
             del self.deliverable_image_paths[index]
 
+    def _on_class_content_toggle(self):
+        self.class_content_text.config(
+            state="normal" if self.has_class_content_var.get() else "disabled"
+        )
+
     def _generate_comprehension(self):
         if not self.config_data.get("gemini_api_key"):
             messagebox.showwarning("안내", "설정에서 Gemini API 키를 먼저 입력해주세요.")
@@ -663,6 +713,7 @@ class WilApp(tk.Tk):
         code_context = code_files.extract_code_context(self.code_file_paths)
         self.set_status("이해도 확인 질문을 만드는 중...")
         result_queue: "queue.Queue" = queue.Queue()
+        reflection_questions = self.current_reflection_questions
 
         def worker():
             try:
@@ -670,7 +721,7 @@ class WilApp(tk.Tk):
                     api_key=self.config_data["gemini_api_key"],
                     model=self.config_data.get("gemini_model", "gemini-flash-latest"),
                     code_context=code_context,
-                    reflection_questions=REFLECTION_QUESTIONS,
+                    reflection_questions=reflection_questions,
                 )
                 result_queue.put(("ok", result))
             except Exception as exc:  # noqa: BLE001
@@ -797,7 +848,6 @@ class WilApp(tk.Tk):
         self.busy = True
         self.generate_btn.config(state="disabled")
         self.regenerate_btn.config(state="disabled")
-        self.set_status("AI가 회고를 작성 중입니다... (수 초 정도 소요)")
 
         reflection_block = self._reflection_block()
         curriculum_topic = self._current_week_topic()
@@ -806,12 +856,27 @@ class WilApp(tk.Tk):
         is_project_week = self._is_current_project_week()
         github_url = self.github_url_var.get().strip()
         deliverable_notes = self.deliverable_notes_text.get("1.0", "end").strip()
+        my_role = self.my_role_var.get().strip()
+        class_notes = (
+            self.class_content_text.get("1.0", "end").strip()
+            if self.has_class_content_var.get()
+            else ""
+        )
+        merge_with_class = is_project_week and bool(class_notes)
+
+        api_key = self.config_data["gemini_api_key"]
+        model = self.config_data.get("gemini_model", "gemini-flash-latest")
+
+        if merge_with_class:
+            self.set_status("1/3 프로젝트 회고를 작성 중입니다...")
+        else:
+            self.set_status("AI가 회고를 작성 중입니다... (수 초 정도 소요)")
 
         def worker():
             try:
-                data = ai_generator.generate_wil(
-                    api_key=self.config_data["gemini_api_key"],
-                    model=self.config_data.get("gemini_model", "gemini-flash-latest"),
+                project_data = ai_generator.generate_wil(
+                    api_key=api_key,
+                    model=model,
                     notes=notes,
                     history=self.history,
                     regenerate=regenerate,
@@ -822,7 +887,30 @@ class WilApp(tk.Tk):
                     is_project_week=is_project_week,
                     github_url=github_url,
                     deliverable_notes=deliverable_notes,
+                    my_role=my_role,
                 )
+                if merge_with_class:
+                    self.result_queue.put(("status", "2/3 이번 주 수업 내용 회고를 작성 중입니다..."))
+                    class_data = ai_generator.generate_wil(
+                        api_key=api_key,
+                        model=model,
+                        notes=class_notes,
+                        history=self.history,
+                        regenerate=regenerate,
+                        curriculum_topic=curriculum_topic,
+                        code_context=code_context,
+                        current_week=current_week,
+                        is_project_week=False,
+                    )
+                    self.result_queue.put(("status", "3/3 프로젝트 회고와 수업 회고를 자연스럽게 합치는 중입니다..."))
+                    data = ai_generator.merge_project_and_class_reviews(
+                        api_key=api_key,
+                        model=model,
+                        project_markdown=project_data["markdown_body"],
+                        class_markdown=class_data["markdown_body"],
+                    )
+                else:
+                    data = project_data
                 self.result_queue.put(("ok", data))
             except Exception as exc:  # noqa: BLE001
                 self.result_queue.put(("error", str(exc)))
@@ -834,6 +922,11 @@ class WilApp(tk.Tk):
         try:
             status, payload = self.result_queue.get_nowait()
         except queue.Empty:
+            self.after(150, self._poll_generate_result)
+            return
+
+        if status == "status":
+            self.set_status(payload)
             self.after(150, self._poll_generate_result)
             return
 
