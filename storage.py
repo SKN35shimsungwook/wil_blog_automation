@@ -1,8 +1,15 @@
 """로컬 설정/이력 저장소. config.json에는 API 키 등 민감정보가 들어가므로 git에 커밋하지 않는다."""
 import json
+import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+# PyInstaller로 exe를 빌드하면 __file__이 임시 압축해제 폴더를 가리켜서(특히 --onefile),
+# 설정/이력이 실행할 때마다 초기화되거나 사라진다. exe로 실행 중이면 exe가 있는 폴더를 기준으로 한다.
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 CONFIG_PATH = BASE_DIR / "config.json"
 HISTORY_PATH = BASE_DIR / "history.json"
 
