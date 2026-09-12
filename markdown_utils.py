@@ -1,10 +1,17 @@
 """마크다운 조립, HTML 변환, 파일 저장 유틸."""
+import sys
 from datetime import date
 from pathlib import Path
 
 import markdown as md_lib
 
-BASE_DIR = Path(__file__).resolve().parent
+# PyInstaller로 exe를 빌드하면 __file__이 임시 압축해제 폴더를 가리켜서(특히 --onefile),
+# 저장 폴더가 실행할 때마다 바뀌거나 사라진다. exe로 실행 중이면 exe가 있는 폴더를 기준으로 한다.
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 OUTPUT_DIR = BASE_DIR / "output"
 
 

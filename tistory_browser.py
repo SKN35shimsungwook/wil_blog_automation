@@ -15,13 +15,20 @@
    누르도록 안내하고 그 결과를 기다린다.
 """
 import re
+import sys
 import time
 from pathlib import Path
 
 from playwright.sync_api import TimeoutError as PwTimeoutError
 from playwright.sync_api import sync_playwright
 
-BASE_DIR = Path(__file__).resolve().parent
+# PyInstaller로 exe를 빌드하면 __file__이 임시 압축해제 폴더를 가리켜서(특히 --onefile),
+# 로그인 세션이 실행할 때마다 사라진다. exe로 실행 중이면 exe가 있는 폴더를 기준으로 한다.
+BASE_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 SESSION_PATH = BASE_DIR / "tistory_session.json"
 
 LOGIN_WAIT_TIMEOUT_MS = 5 * 60 * 1000  # 카카오 로그인(2단계 인증 포함) 대기, 최대 5분
